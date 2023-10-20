@@ -16,7 +16,7 @@
 namespace astroaccelerate {
 
   /* PRESTO defines */
-#define NUMLOCPOWAVG  20 //Number of bins (total) to average for local power:  Must be an even number (1/2 on each side). 
+#define NUMLOCPOWAVG  20 //Number of bins (total) to average for local power:  Must be an even number (1/2 on each side).
 #define DELTAAVGBINS  5 // Number of bins next to freq in question to ignore (on each side) when determining local power.
 #define NUMFINTBINS   16 // Number of bins on each side of the central frequency to sum for Fourier interpolation (low accuracy)
 #define HIGHACC 1 //Accuracy setting for calculating kernel half width
@@ -180,6 +180,69 @@ cufftComplex *presto_gen_r_response(double roffset, int numbetween, int numkern)
     return response;
   }
 
+  void presto_gen_r_response_new(double roffset, int numbetween, int numkern, cufftComplex *response)
+  /*  Generate a complex response function for Fourier interpolation.  */
+  /*  Arguments:                                                       */
+  /*    'roffset' is the offset in Fourier bins for the full response  */
+  /*       (i.e. At this point, the response would equal 1.0)          */
+  /*    'numbetween' is the number of points to interpolate between    */
+  /*       each standard FFT bin.  (i.e. 'numbetween' = 2 = interbins) */
+  /*    'numkern' is the number of complex points that the kernel will */
+  /*       contain.                                                    */
+  {
+    int ii;
+    double tmp, sinc, s, c, alpha, beta, delta, startr, r;
+
+    /* Check that the arguments are OK */
+
+    if (roffset < 0.0 || roffset >= 1.0) {
+      printf("\n  roffset = %f (out of bounds) in gen_r_response().\n\n", roffset);
+      exit(-1);
+    }
+    if (numbetween < 1 || numbetween >= 20000) {
+      printf("\n  numbetween = %d (out of bounds) in gen_r_response().\n\n",
+             numbetween);
+      exit(-1);
+    }
+    if (numkern < numbetween) {
+      printf("\n  numkern = %d (out of bounds) in gen_r_response().\n\n", numkern);
+      exit(-1);
+    }
+    if ((numkern % (2 * numbetween)) != 0) {
+      printf("\n  numkern %% (2 * numbetween) != 0 in gen_r_response().\n\n");
+      exit(-1);
+    }
+
+    /* Prep the recursion */
+    startr = M_PI * (numkern / (double) (2 * numbetween) + roffset);
+    delta = -M_PI / numbetween;
+    tmp = sin(0.5 * delta);
+    alpha = -2.0 * tmp * tmp;
+    beta = sin(delta);
+    c = cos(startr);
+    s = sin(startr);
+
+    /* Generate the points */
+
+    for (ii = 0, r = startr; ii < numkern; ii++, r += delta) {
+      if (r == 0.0)
+	sinc = 1.0;
+      else
+	sinc = s / r;
+      response[ii].x = c * sinc;
+      response[ii].y = s * sinc;
+      c = alpha * (tmp = c) - beta * s + c;
+      s = alpha * s + beta * tmp + s;
+    }
+
+    /* Correct for divide by zero when the roffset is close to zero */
+
+    if (roffset < 1E-3) {
+      response[numkern / 2].x = 1 - 6.579736267392905746 * (tmp = roffset * roffset);
+      response[numkern / 2].y = roffset * (M_PI - 10.335425560099940058 * tmp);
+    }
+  }
+
 
   cufftComplex* presto_gen_z_response(double roffset, int numbetween, double z, int numkern)
   /*  Generate the response function for Fourier f-dot interpolation.  */
@@ -219,7 +282,7 @@ cufftComplex *presto_gen_r_response(double roffset, int numbetween, int numkern)
     }
 
     /* If z~=0 use the normal Fourier interpolation kernel */
-   
+
     absz = fabs(z);
     if (absz < 1E-4) {
      response = presto_gen_r_response(roffset, numbetween, numkern);
@@ -268,6 +331,97 @@ cufftComplex *presto_gen_r_response(double roffset, int numbetween, int numkern)
     }
 
     return response;
+  }
+
+  void presto_gen_z_response_new(double roffset, int numbetween, double z, int numkern, cufftComplex *response)
+  /*  Generate the response function for Fourier f-dot interpolation.  */
+  /*  Arguments:                                                       */
+  /*    'roffset' is the offset in Fourier bins for the full response  */
+  /*       (i.e. At this point, the response would equal 1.0)          */
+  /*    'numbetween' is the number of points to interpolate between    */
+  /*       each standard FFT bin.  (i.e. 'numbetween' = 2 = interbins) */
+  /*    'z' is the Fourier Frequency derivative (# of bins the signal  */
+  /*       smears over during the observation).                        */
+  /*    'numkern' is the number of complex points that the kernel will */
+  /*       contain.                                                    */
+  {
+    int ii, signz, numkernby2;
+    double absz, zd, tmp, r, xx, yy, zz, startr, startroffset;
+    double fressy, frescy, fressz, frescz, tmprl, tmpim;
+    double s, c, pibyz, cons, delta;
+    cufftComplex *response;
+
+    /* Check that the arguments are OK */
+
+    if (roffset < 0.0 || roffset >= 1.0) {
+        printf("\n  roffset = %f (out of bounds) in gen_z_response().\n\n", roffset);
+		exit(-1);
+	}
+	if (numbetween < 1 || numbetween >= 20000) {
+		printf("\n  numbetween = %d (out of bounds) in gen_z_response().\n\n", numbetween);
+      exit(-1);
+    }
+    if (numkern < numbetween) {
+      printf("\n  numkern = %d (out of bounds) in gen_z_response().\n\n", numkern);
+      exit(-1);
+    }
+    if ((numkern % (2 * numbetween)) != 0) {
+      printf("\n  numkern %% (2 * numbetween) != 0 in gen_z_response().\n\n");
+      exit(-1);
+    }
+
+    /* If z~=0 use the normal Fourier interpolation kernel */
+
+    absz = fabs(z);
+
+    if (absz < 1E-4) {
+      presto_gen_r_response_new(roffset, numbetween, numkern, response);
+      return;
+    //  response = presto_gen_r_response(roffset, numbetween, numkern);
+    //   return response;
+    }
+
+    // response = (cufftComplex*)malloc(numkern*sizeof(cufftComplex));
+
+    /* Begin the calculations */
+
+    startr = roffset - (0.5 * z);
+    startroffset = (startr < 0) ? 1.0 + modf(startr, &tmprl) : modf(startr, &tmprl);
+    signz = (z < 0.0) ? -1 : 1;
+    zd = signz * M_SQRT2 / sqrt(absz);
+    cons = zd / 2.0;
+    pibyz = M_PI / z;
+    startr += numkern / (double)(2.0*numbetween);
+    delta = -1.0 / numbetween;
+
+    for (ii = 0, r = startr; ii < numkern; ii++, r += delta) {
+      yy = r * zd;
+      zz = yy + z * zd;
+      xx = pibyz * r * r;
+      c = cos(xx);
+      s = sin(xx);
+      fresnl(yy, &fressy, &frescy);
+      fresnl(zz, &fressz, &frescz);
+      tmprl = signz * (frescz - frescy);
+      tmpim = fressy - fressz;
+      response[ii].x = ((tmp = tmprl) * c - tmpim * s) * cons;
+      response[ii].y = -(tmp * s + tmpim * c) * cons;
+    }
+
+    /* Correct for divide by zero when the roffset and z is close to zero */
+
+    if (startroffset < 1E-3 && absz < 1E-3) {
+      zz = z * z;
+      xx = startroffset * startroffset;
+      numkernby2 = numkern / 2;
+      response[numkernby2].x = 1.0 - 0.16449340668482264365 * zz;
+      response[numkernby2].y = -0.5235987755982988731 * z;
+      response[numkernby2].x += startroffset * 1.6449340668482264365 * z;
+      response[numkernby2].y += startroffset * (M_PI - 0.5167712780049970029 * zz);
+      response[numkernby2].x += xx * (-6.579736267392905746
+                                      + 0.9277056288952613070 * zz);
+      response[numkernby2].y += xx * (3.1006276680299820175 * z);
+    }
   }
 
 // Tests conducted checking the fractional deviation of the amplitudes
@@ -328,6 +482,7 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
         response = presto_gen_z_response(roffset, numbetween, z, numkern);
         return response;
     }
+    else{
 
     /* Choose num_pts_wdat so that there is plenty of Freq range */
     /* outside of the RZW response. */
@@ -351,7 +506,7 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
 	if(data==NULL) printf("Error allocating data!\n");
 	data_fft = (cufftComplex*) malloc(data_fft_size);
 	if(data_fft==NULL) printf("Error allocating data_fft!\n");
-	
+
     for (ii = 0; ii < num_pts_wdat * numbetween; ii++){
         data[ii] = 0.0;
 	}
@@ -360,7 +515,7 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
         phase = TWOPI * (t * (t * (t * fdd + fd) + f));
         data[ii] = amp * cos(phase);
     }
-    
+
 	/* FFT the data */
 	//---------- CUFFT ------------->
 	cufftHandle plan;
@@ -372,22 +527,22 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
 		cudaMalloc((void **) &d_input, data_size);
 		cufftComplex *d_output;
 		cudaMalloc((void **) &d_output, data_fft_size);
-		
+
 		cudaError = cudaMemcpy(d_input, data, data_size, cudaMemcpyHostToDevice);
 	    if(cudaError != cudaSuccess) printf("Could not cudaMemcpy in presto_func.cpp");
-	    
+
 		cufftExecR2C(plan, d_input, d_output);
-		
+
 		cudaError = cudaMemcpy(data_fft, d_output, data_fft_size, cudaMemcpyDeviceToHost);
 	    if(cudaError != cudaSuccess) printf("Could not cudaMemcpy in presto_func.cpp");
-		
+
 		cudaFree(d_input);
 		cudaFree(d_output);
 	}
 	else printf("CUFFT error: Plan creation failed");
 	cufftDestroy(plan);
 	//------------------------------<
-	
+
 	//--------- fftw --------------->
     //fftwf_plan rffplan = fftwf_plan_dft_r2c_1d(num_pts_wdat*numbetween, data, (fftwf_complex*) data_fft, FFTW_ESTIMATE);
 	//if(rffplan==NULL) printf("FFT error!\n");
@@ -396,19 +551,148 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
 	//	fftwf_destroy_plan(rffplan);
 	//}
 	//------------------------------<
-	
+
     /* Generate the final response */
     response = (cufftComplex*) malloc(numkern * sizeof(cufftComplex));
 	if(response==NULL) printf("Error allocating response!\n");
     /* Chop off the contaminated ends and/or the extra data */
     memcpy(response, data_fft + (fbar * numbetween - numkern / 2), sizeof(cufftComplex)*numkern);
-	
-	
+
     /* cleanup */
     free(data);
 	free(data_fft);
     return response;
+    }
 }
+
+void presto_gen_w_response_new(double roffset, int numbetween, double z, double w, int numkern, cufftComplex *response){
+  /*  Generate the response for Fourier f, f-dot, f-dotdot interp.     */
+  /*  Arguments:                                                       */
+  /*    'roffset' is the offset in Fourier bins for the full response  */
+  /*       (i.e. At this point, the response would equal 1.0)          */
+  /*    'numbetween' is the number of points to interpolate between    */
+  /*       each standard FFT bin.  (i.e. 'numbetween' = 2 = interbins) */
+  /*    'z' is the average Fourier Frequency derivative (# of bins     */
+  /*       the signal smears over during the observation).             */
+  /*    'w' is the Fourier Frequency 2nd derivative (change in the     */
+  /*       Fourier f-dot during the observation).                      */
+  /*    'numkern' is the number of complex points that the kernel will */
+  /*       contain.                                                    */
+  /*  This version uses zero-padding to get the "numbetween"           */
+    int ii, fbar, num_pts_wdat;
+    float *data;
+	  cufftComplex *data_fft;
+    double amp, f, fd, fdd, dt, t, phase, dfbar;
+
+    /* Check that the arguments are OK */
+    if (roffset < 0.0 || roffset >= 1.0) {
+        printf("\n  roffset = %f (out of bounds) in gen_w_response().\n\n", roffset);
+        exit(-1);
+    }
+    if (numbetween < 1 || numbetween >= 20000) {
+        printf("\n  numbetween = %d (out of bounds) in gen_w_response().\n\n",
+               numbetween);
+        exit(-1);
+    }
+    if (numkern < numbetween) {
+        printf("\n  numkern = %d (out of bounds) in gen_w_response().\n\n", numkern);
+        exit(-1);
+    }
+    if ((numkern % (2 * numbetween)) != 0) {
+        printf("\n  numkern %% (2 * numbetween) != 0 in gen_w_response().\n\n");
+        exit(-1);
+    }
+
+    /* If w~=0 use the normal F-dot Fourier interpolation kernel */
+    if (fabs(w) < 1E-4) {
+
+      presto_gen_z_response_new(roffset, numbetween, z, numkern, response);
+        return;
+        // response = presto_gen_z_response(roffset, numbetween, z, numkern);
+        // return response;
+    }
+
+    /* Choose num_pts_wdat so that there is plenty of Freq range */
+    /* outside of the RZW response. */
+    num_pts_wdat = next2_to_n(6 * presto_w_resp_halfwidth(z, w, LOWACC) + 200 + numkern / numbetween);
+
+    /* Otherwise initialize some data */
+    dt = 1.0 / (double) num_pts_wdat;
+    amp = 2.0 * dt;
+    fbar = num_pts_wdat / 4;  // num_pts_wdat / 4 is average freq
+    dfbar = (double) fbar + roffset;
+    // r_o = rbar - zbar/2 + w/12  where _o is initial and bar is average
+    // z_o = zbar - w/2
+    f = dfbar - 0.5 * z + w / 12.0;     //  This shifts the initial f appropriately
+    fd = (z - 0.5 * w) / 2.0;   // z - w/2 is the initial z value
+    fdd = w / 6.0;
+
+	/* Generate the data set.  Use zero-padding to do the interpolation. */
+	size_t data_size = num_pts_wdat*numbetween*sizeof(float);
+	size_t data_fft_size = num_pts_wdat*numbetween*sizeof(cufftComplex);
+	data = (float*) malloc(data_size);
+	if(data==NULL) printf("Error allocating data!\n");
+	data_fft = (cufftComplex*) malloc(data_fft_size);
+	if(data_fft==NULL) printf("Error allocating data_fft!\n");
+
+    for (ii = 0; ii < num_pts_wdat * numbetween; ii++){
+        data[ii] = 0.0;
+	}
+    for (ii = 0; ii < num_pts_wdat; ii++) {
+        t = ii * dt;
+        phase = TWOPI * (t * (t * (t * fdd + fd) + f));
+        data[ii] = amp * cos(phase);
+    }
+
+	/* FFT the data */
+	//---------- CUFFT ------------->
+	cufftHandle plan;
+	cufftResult cuFFT_error;
+	cudaError_t cudaError;
+	cuFFT_error = cufftPlan1d(&plan, num_pts_wdat*numbetween, CUFFT_R2C, 1);
+	if (CUFFT_SUCCESS == cuFFT_error) {
+		float *d_input;
+		cudaMalloc((void **) &d_input, data_size);
+		cufftComplex *d_output;
+		cudaMalloc((void **) &d_output, data_fft_size);
+
+		cudaError = cudaMemcpy(d_input, data, data_size, cudaMemcpyHostToDevice);
+	    if(cudaError != cudaSuccess) printf("Could not cudaMemcpy in presto_func.cpp");
+
+		cufftExecR2C(plan, d_input, d_output);
+
+		cudaError = cudaMemcpy(data_fft, d_output, data_fft_size, cudaMemcpyDeviceToHost);
+	    if(cudaError != cudaSuccess) printf("Could not cudaMemcpy in presto_func.cpp");
+
+		cudaFree(d_input);
+		cudaFree(d_output);
+	}
+	else printf("CUFFT error: Plan creation failed");
+	cufftDestroy(plan);
+	//------------------------------<
+
+	//--------- fftw --------------->
+    //fftwf_plan rffplan = fftwf_plan_dft_r2c_1d(num_pts_wdat*numbetween, data, (fftwf_complex*) data_fft, FFTW_ESTIMATE);
+	//if(rffplan==NULL) printf("FFT error!\n");
+	//else {
+	//	fftwf_execute(rffplan);
+	//	fftwf_destroy_plan(rffplan);
+	//}
+	//------------------------------<
+
+    /* Generate the final response */
+    response = (cufftComplex*) malloc(numkern * sizeof(cufftComplex));
+	if(response==NULL) printf("Error allocating response!\n");
+    /* Chop off the contaminated ends and/or the extra data */
+    memcpy(response, data_fft + (fbar * numbetween - numkern / 2), sizeof(cufftComplex)*numkern);
+
+    /* cleanup */
+    free(data);
+	free(data_fft);
+    return response;
+
+}
+
 
 void presto_place_complex_kernel(cufftComplex * kernel, int numkernel, cufftComplex * result, int numresult)
   /* This routine places the kernel in a zero filled array */
@@ -426,9 +710,9 @@ void presto_place_complex_kernel(cufftComplex * kernel, int numkernel, cufftComp
     int ii, halfwidth;
     cufftComplex zeros;
     zeros.x = zeros.y = 0.0;
-  
+
     halfwidth = numkernel / 2;
-  
+
     for (ii = 0; ii < numresult; ii++){
       result[ii] = zeros;
     }
@@ -466,7 +750,7 @@ void presto_place_complex_kernel(cufftComplex * kernel, int numkernel, cufftComp
     newbuflen = initialbuflen * log(newoffset);
     if (newbuflen > maxbuflen)
       newbuflen = maxbuflen;
-	
+
     while (newoffset + newbuflen < numamps) {
       //printf("newoffset=%d; lastbuflen=%d; newbuflen=%d;\n", newoffset, lastbuflen, newbuflen);
 	  /* Calculate the next mean */
@@ -520,7 +804,7 @@ void presto_place_complex_kernel(cufftComplex * kernel, int numkernel, cufftComp
 		}
 
 		norm = 1.0 / sqrt(median(powers, numamps)/log(2.0));
-  
+
 		for (ii = 0; ii < numamps; ii++) {
 			fft[ii].x *= norm;
 			fft[ii].y *= norm;
