@@ -23,6 +23,7 @@
 #include "aa_device_peak_find.hpp"
 #include "presto_funcs.hpp"
 #include "presto.hpp"
+#include "nvToolsExt.h"
 
 namespace astroaccelerate {
 
@@ -225,7 +226,6 @@ namespace astroaccelerate {
 	//getLastCudaError("\nCuda Error\n");
 
 nvtxRangePush("fdas_cuda_createPlan");
-
 
 	/*
 	 * -- do the operation above for each stream
@@ -494,7 +494,7 @@ nvtxRangePop();
 
       }
 
-nvtxRangePush("Main Khali Region");
+nvtxRangePush("cudaFree");
 
     if (cmdargs.search)
       {

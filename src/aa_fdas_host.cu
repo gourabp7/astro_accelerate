@@ -6,7 +6,6 @@
 #include "aa_device_spectrum_whitening.hpp"
 #include "nvToolsExt.h"
 
-
 #define ENABLE_HOST_DERED false
 #define ENABLE_HOST_BLOCK_MEDIAN_NORM false
 
@@ -270,6 +269,9 @@ namespace astroaccelerate {
 
 nvtxRangePush("fdas_create_host");
 
+
+nvtxRangePush("fdas_create_host");
+
     //!TEST!: replace templates here. Template width: numkern; padded width: KERNLEN
 #ifdef FDAS_CONV_TEST
     for (ii = 0; ii < NKERN; ii++){
@@ -302,7 +304,9 @@ nvtxRangePush("fdas_create_host");
       cufftExecC2C(templates_plan, d_kernel, d_kernel, CUFFT_FORWARD);
 
     free(h_kernel);
+
 nvtxRangePop();
+
   }
 
   /** \brief Create CUDA cufft fftplans for FDAS. */
@@ -310,6 +314,9 @@ nvtxRangePop();
     /*check plan memory overhead and create plans */
     double mbyte = 1024.0*1024.0;
     //double gbyte = mbyte*1024.0;
+
+nvtxRangePush("fdas_cuda_create_fftplans");
+
 
 nvtxRangePush("fdas_cuda_create_fftplans");
 
