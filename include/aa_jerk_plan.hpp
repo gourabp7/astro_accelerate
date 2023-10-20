@@ -2,6 +2,7 @@
 #define ASTRO_ACCELERATE_AA_JERK_PLAN_HPP
 
 #include <stdio.h>
+#include <cstdint>
 
 // NOTES:
 // conv_size should really be determined by the class based on size of the filter and performance of the GPU

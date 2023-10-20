@@ -363,7 +363,7 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
     
 	/* FFT the data */
 	//---------- CUFFT ------------->
-	cufftHandle plan;
+	/*cufftHandle plan;
 	cufftResult cuFFT_error;
 	cudaError_t cudaError;
 	cuFFT_error = cufftPlan1d(&plan, num_pts_wdat*numbetween, CUFFT_R2C, 1);
@@ -396,7 +396,7 @@ cufftComplex *presto_gen_w_response(double roffset, int numbetween, double z, do
 	//	fftwf_destroy_plan(rffplan);
 	//}
 	//------------------------------<
-	
+//*/	
     /* Generate the final response */
     response = (cufftComplex*) malloc(numkern * sizeof(cufftComplex));
 	if(response==NULL) printf("Error allocating response!\n");

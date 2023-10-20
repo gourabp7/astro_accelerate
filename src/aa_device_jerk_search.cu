@@ -30,6 +30,8 @@
 // Peak find
 #include "aa_device_peak_find.hpp"
 
+#include "nvToolsExt.h"
+
 #define VERBOSE 1
 //#define EXPORT_FILTERS
 //#define EXPORT_PLANE
@@ -89,7 +91,8 @@ namespace astroaccelerate {
 				tempfilter = presto_gen_w_response(0.0, interbinned_samples, z, w, filter_size);
 				
 				#ifdef EXPORT_FILTERS
-				sprintf(filename, "filter_z%0.1f_w%0.1f.dat", z, w);
+std::cout << "EXPORT_FILTERS: On" << std::endl;			
+	sprintf(filename, "filter_z%0.1f_w%0.1f.dat", z, w);
 				FILEOUT.open(filename);
 				for(int c=0; c<filter_size; c++){
 					FILEOUT << tempfilter[c].x*tempfilter[c].x + tempfilter[c].y*tempfilter[c].y << " " << tempfilter[c].x << " " << tempfilter[c].y << std::endl;
@@ -128,7 +131,8 @@ namespace astroaccelerate {
 
 	int jerk_search_from_ddtr_plan(float ***dedispersed_data, aa_jerk_strategy &jerk_strategy, float *dm_low, float *dm_step, const int *list_of_ndms, float sampling_time, int *inBin, int nRanges){
 
-		
+	nvtxRangePush("Main Khali Region 1");
+	
 		//----------> Convolution test
 		int JERK_SEARCH_CONVOLUTION_TEST = 0;
 		if(JERK_SEARCH_CONVOLUTION_TEST) {
@@ -278,7 +282,11 @@ namespace astroaccelerate {
 			printf("---------------- JERK Search convolution test --------------------\n\n");
 		}
 		//-----------------------------------------------------------<
-		
+	
+nvtxRangePop();
+
+nvtxRangePush("Main Khali Region 2");
+	
 		
 		//---------> Time measurements
 		aa_gpu_timer timer_total, timer_DM, timer;
@@ -295,6 +303,8 @@ namespace astroaccelerate {
 			printf("Cannot allocate GPU memory for JERK filters!\n");
 			return(1);
 		}
+
+nvtxRangePush("jerk_create_acc_filters");
 		
 		jerk_create_acc_filters(h_jerk_filters, &jerk_strategy);
 		if ( cudaSuccess != cudaMemcpy(d_jerk_filters, h_jerk_filters, jerk_strategy.filter_padded_size_bytes(), cudaMemcpyHostToDevice) ) {
@@ -302,9 +312,14 @@ namespace astroaccelerate {
 			return(2);
 		}
 		
+nvtxRangePop();
+
+nvtxRangePush("forwardCustomFFT");
+
 		forwardCustomFFT(d_jerk_filters, jerk_strategy.conv_size(), jerk_strategy.nFilters_total());
 		//-----------------------------------------------------------<
-		
+
+nvtxRangePop();		
 		
 		//---------> Device data
 		float *d_DM_trial = NULL;
@@ -335,7 +350,11 @@ namespace astroaccelerate {
 		float *d_ZW_planes     = NULL;
 		float *d_MSD_workarea  = NULL;
 		//-----------------------------------------------------------<
-		
+	
+nvtxRangePop();
+
+nvtxRangePush("Main Khali Region 3");
+	
 		int64_t default_nTimesamples = jerk_strategy.nTimesamples();
 		double MSD_time = 0, Candidate_time = 0, Convolution_time = 0;
 		for(int64_t active_range=0; active_range<nRanges; active_range++){
@@ -582,6 +601,7 @@ namespace astroaccelerate {
 			time_per_range = 0;
 		}
 		
+nvtxRangePop();
 		
 		
 		timer_total.Stop();
@@ -599,6 +619,8 @@ namespace astroaccelerate {
 		if ( cudaSuccess != cudaFree(d_DM_trial_ffted)) printf("ERROR while deallocating d_DM_trial_ffted!\n");
 		if ( cudaSuccess != cudaFree(d_MSD)) printf("ERROR while deallocating d_MSD!\n");
 		return(0);
+
+
 	}
 	
 }// namespace

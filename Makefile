@@ -16,7 +16,7 @@ CU_FILES := ${wildcard src/*.cu}
 OBJ_FILES := $(addprefix obj/,$(notdir $(CPP_FILES:.cpp=.o))) $(addprefix obj/,$(notdir $(CU_FILES:.cu=.o)))
 EXAMPLES_FILES := examples_dedispersion examples_periodicity examples_dedispersion_and_analysis examples_filterbank_dedispersion
 
-CXXFLAGS	:= -O3
+CXXFLAGS	:= -O3 -std=c++11
 LDFLAGS		= `root-config --libs`
 COMPILEJOBS	= astro-accelerate
 HEADERS		= include/*.hpp include/*.cuh
@@ -34,13 +34,13 @@ GENCODE_SM70	:= -gencode arch=compute_70,code=sm_70 # Volta
 GENCODE_SM75    := -gencode arch=compute_75,code=sm_75 # Turing
 GENCODE_SM80    := -gencode arch=compute_80,code=sm_80 # Ampere A100
 GENCODE_SM86    := -gencode arch=compute_86,code=sm_86 # Ampere RTX 30xx
-GENCODE_FLAGS   := $(GENCODE_SM86)
+GENCODE_FLAGS   := $(GENCODE_SM70)
 
 ifeq ($(cache),off)
-        NVCCFLAGS := $(INC) ${INCLUDE} -g -lineinfo -Xcompiler -O3 -lm --use_fast_math\
+        NVCCFLAGS := $(INC) ${INCLUDE} -g -lineinfo -lnvToolsExt -Xcompiler -O3 -std=c++11 -lm --use_fast_math\
         --ptxas-options=-v -Xptxas -dlcm=cg $(GENCODE_FLAGS) -Xcompiler -fopenmp
 else
-        NVCCFLAGS := $(INC) ${INCLUDE} -g -lineinfo -Xcompiler -O3 -lm --use_fast_math\
+        NVCCFLAGS := $(INC) ${INCLUDE} -g -lineinfo -lnvToolsExt -Xcompiler -O3 -std=c++11 -lm --use_fast_math\
         --ptxas-options=-v -lcuda -lcudart  -lcurand -lcufft -lcudadevrt -Xptxas -dlcm=cg $(GENCODE_FLAGS) -Xcompiler -fopenmp
 endif
 

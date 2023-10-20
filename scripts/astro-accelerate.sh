@@ -49,7 +49,9 @@ echo "The output directory path is " ${output_dir}
 cd ${output_dir}
 
 # Run the executable
-time ${executable_directory}/astro-accelerate ${input_file}
+#${executable_directory}/astro-accelerate ${input_file}
+nsys profile -t cuda,nvtx --stats=true  ${executable_directory}/astro-accelerate ${input_file}
+#gdb --args ${executable_directory}/astro-accelerate ${input_file}
 
 # Test if output file exists, and combine into a single file
 # If not found, do nothing, and write the return code of ls to /dev/null

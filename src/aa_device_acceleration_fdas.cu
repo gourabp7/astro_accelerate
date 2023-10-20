@@ -23,6 +23,7 @@
 #include "aa_device_peak_find.hpp"
 #include "presto_funcs.hpp"
 #include "presto.hpp"
+#include "nvToolsExt.h"
 
 namespace astroaccelerate {
 
@@ -224,6 +225,8 @@ namespace astroaccelerate {
 	printf(" done.\n");
 	//getLastCudaError("\nCuda Error\n");
 
+nvtxRangePush("fdas_cuda_createPlan");
+
 	/*
 	 * -- do the operation above for each stream
 	 * for (int ii = 0; ii < number_dm_concurrently; ++ii)
@@ -236,6 +239,8 @@ namespace astroaccelerate {
 	//Create cufft plans
 	fdas_cuda_create_fftplans(&fftplans, &params);
 	//getLastCudaError("\nCuda Error\n");
+
+nvtxRangePop();
 
 	/*
 	 * Is 1 plan per stream needed here ?
@@ -255,6 +260,8 @@ namespace astroaccelerate {
 	 *
 	 *
 	 */
+
+nvtxRangePush("FFT");
 
 	// FFT
 	for (int i = 0; i < range; i++) {
@@ -483,7 +490,11 @@ namespace astroaccelerate {
 	  }
 	}
 
+nvtxRangePop();
+
       }
+
+nvtxRangePush("cudaFree");
 
     if (cmdargs.search)
       {
@@ -504,6 +515,8 @@ namespace astroaccelerate {
 	 * }
 	 */
       }
+
+nvtxRangePop();
 
   }
 

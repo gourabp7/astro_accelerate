@@ -4,6 +4,7 @@
 #include "aa_fdas_host.hpp"
 #include "aa_log.hpp"
 #include "aa_device_spectrum_whitening.hpp"
+#include "nvToolsExt.h"
 
 #define ENABLE_HOST_DERED false
 #define ENABLE_HOST_BLOCK_MEDIAN_NORM false
@@ -265,7 +266,9 @@ namespace astroaccelerate {
       presto_place_complex_kernel(tempkern, numkern, (h_kernel+ii*KERNLEN), KERNLEN);
       free(tempkern);
     }
-  
+ 
+nvtxRangePush("fdas_create_host");
+ 
     //!TEST!: replace templates here. Template width: numkern; padded width: KERNLEN
 #ifdef FDAS_CONV_TEST
     for (ii = 0; ii < NKERN; ii++){
@@ -298,6 +301,8 @@ namespace astroaccelerate {
 
     free(h_kernel);
 
+nvtxRangePop();
+
   }
 
   /** \brief Create CUDA cufft fftplans for FDAS. */
@@ -305,6 +310,8 @@ namespace astroaccelerate {
     /*check plan memory overhead and create plans */
     double mbyte = 1024.0*1024.0;
     //double gbyte = mbyte*1024.0;
+
+nvtxRangePush("fdas_cuda_create_fftplans");
  
     //set cufft plan parameters
     size_t sig_worksize, real_worksize;
@@ -364,6 +371,9 @@ namespace astroaccelerate {
     cudaDeviceSynchronize();
     //getLastCudaError("\nCuda Error forward fft plan\n");
     printf("\ncuFFT plans done \n");
+
+nvtxRangePop();
+
   }
 
 	void export_fft_data(float2* data, size_t data_size, const char* file){
